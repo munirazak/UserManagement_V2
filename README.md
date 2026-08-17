@@ -11,8 +11,42 @@ IndexShelf can still **register** a borrower by calling this service. Only UserM
 
 ## Run
 
+### Option A — Local (Maven)
+
 ```bash
+# Dev profile (default) — requires local PostgreSQL
 mvn spring-boot:run
+
+# Prod profile
+mvn spring-boot:run -Dspring-boot.run.profiles=prod
+```
+
+### Option B — Docker Compose (app + Postgres)
+
+```bash
+docker compose up --build
+```
+
+This starts:
+
+- PostgreSQL on host port `5434` (container still uses `5432`)
+- UserManagement API on port `8082` (`prod` profile)
+
+Stop with `docker compose down` (add `-v` to also remove the DB volume).
+
+Base URL: `http://localhost:8082`
+
+### CI/CD (GitHub Actions)
+
+Declarative pipeline in `.github/workflows/ci.yml`:
+
+1. On push/PR to `main`: run `mvn verify` (tests + coverage gate)
+2. On push to `main`: build and publish the Docker image to GitHub Container Registry (`ghcr.io`)
+
+Pull the published image (after a successful push to `main`):
+
+```bash
+docker pull ghcr.io/<your-github-username>/usermanagement:latest
 ```
 
 ## APIs
