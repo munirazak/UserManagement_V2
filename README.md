@@ -36,6 +36,47 @@ Stop with `docker compose down` (add `-v` to also remove the DB volume).
 
 Base URL: `http://localhost:8082`
 
+### Port and profile (local vs GCP)
+
+| Setting | Local default | Production / GCP |
+|---------|---------------|------------------|
+| Port | `8082` (`PORT` unset) | Set env `PORT` (Cloud Run sets this, often `8080`) |
+| Profile | `dev` | Set env `SPRING_PROFILES_ACTIVE=prod` |
+
+`application.properties` uses:
+
+```properties
+server.port=${PORT:8082}
+spring.profiles.active=${SPRING_PROFILES_ACTIVE:dev}
+```
+
+On GCP (Cloud Run), configure env vars such as:
+
+- `SPRING_PROFILES_ACTIVE=prod`
+- `CLOUD_SQL_INSTANCE=project:region:instance` (**required** — from Cloud SQL instance overview)
+- `DB_NAME=book_catalogue` (optional; default)
+- `DB_USERNAME` / `DB_PASSWORD`
+- `JWT_SECRET` — same value as IndexShelf
+- Attach the same Cloud SQL instance under Cloud Run **Cloud SQL connections**
+- Grant the Cloud Run service account `roles/cloudsql.client`
+
+Do **not** set `DB_URL` to `jdbc:postgresql://localhost:5432/...` on Cloud Run.
+Do **not** bake `prod` into the JAR; override with env vars at deploy time.
+
+### Cloud Run → Cloud SQL (recommended)
+
+UserManagement uses the **Cloud SQL Java Connector** (`postgres-socket-factory`), not a public internet Postgres host.
+
+Prod JDBC default (when `DB_URL` is unset):
+
+```text
+jdbc:postgresql:///<DB_NAME>?cloudSqlInstance=<CLOUD_SQL_INSTANCE>
+  &socketFactory=com.google.cloud.sql.postgres.SocketFactory
+  &cloudSqlRefreshStrategy=lazy
+```
+
+Create the database in Cloud SQL Console before the first deploy. Local Docker Compose still sets `DB_URL=jdbc:postgresql://postgres:5432/book_catalogue`.
+
 ### CI/CD (GitHub Actions)
 
 Declarative pipeline in `.github/workflows/ci.yml`:
