@@ -129,6 +129,79 @@ public class SchemaBootstrap implements ApplicationListener<ApplicationEnvironme
             for (String sql : statements) {
                 stmt.execute(sql);
             }
+            migrateCredentialsFkToBorrowerId(conn, stmt);
+        }
+    }
+
+    /**
+     * Older schema stored library_id on borrower_credentials (duplicating borrowers.library_id).
+     * Migrate to borrower_id → borrowers.id when the legacy column is still present.
+     */
+    private void migrateCredentialsFkToBorrowerId(Connection conn, Statement stmt) throws Exception {
+        if (!tableExists(conn, "borrower_credentials")) {
+            return;
+        }
+        boolean hasLegacyLibraryId = columnExists(conn, "borrower_credentials", "library_id");
+        boolean hasBorrowerId = columnExists(conn, "borrower_credentials", "borrower_id");
+        if (!hasLegacyLibraryId) {
+            return;
+        }
+
+        if (!hasBorrowerId) {
+            stmt.execute("ALTER TABLE borrower_credentials ADD COLUMN borrower_id BIGINT");
+        }
+
+        stmt.execute("""
+                UPDATE borrower_credentials bc
+                SET borrower_id = b.id
+                FROM borrowers b
+                WHERE bc.library_id = b.library_id
+                  AND (bc.borrower_id IS NULL OR bc.borrower_id <> b.id)
+                """);
+
+        dropForeignKeysOnColumn(conn, stmt, "borrower_credentials", "library_id");
+        stmt.execute("ALTER TABLE borrower_credentials DROP COLUMN IF EXISTS library_id");
+
+        stmt.execute("ALTER TABLE borrower_credentials ALTER COLUMN borrower_id SET NOT NULL");
+        dropForeignKeysOnColumn(conn, stmt, "borrower_credentials", "borrower_id");
+        stmt.execute("""
+                ALTER TABLE borrower_credentials
+                ADD CONSTRAINT borrower_credentials_borrower_id_fkey
+                FOREIGN KEY (borrower_id) REFERENCES borrowers (id) ON DELETE CASCADE
+                """);
+        stmt.execute("""
+                ALTER TABLE borrower_credentials
+                DROP CONSTRAINT IF EXISTS borrower_credentials_borrower_id_key
+                """);
+        stmt.execute("""
+                ALTER TABLE borrower_credentials
+                ADD CONSTRAINT borrower_credentials_borrower_id_key UNIQUE (borrower_id)
+                """);
+    }
+
+    private boolean tableExists(Connection conn, String table) throws Exception {
+        try (ResultSet rs = conn.getMetaData().getTables(null, "public", table, new String[]{"TABLE"})) {
+            return rs.next();
+        }
+    }
+
+    private boolean columnExists(Connection conn, String table, String column) throws Exception {
+        try (ResultSet rs = conn.getMetaData().getColumns(null, "public", table, column)) {
+            return rs.next();
+        }
+    }
+
+    private void dropForeignKeysOnColumn(
+            Connection conn, Statement stmt, String table, String column) throws Exception {
+        try (ResultSet rs = conn.getMetaData().getImportedKeys(null, "public", table)) {
+            while (rs.next()) {
+                if (column.equalsIgnoreCase(rs.getString("FKCOLUMN_NAME"))) {
+                    String fkName = rs.getString("FK_NAME");
+                    if (fkName != null && !fkName.isBlank()) {
+                        stmt.execute("ALTER TABLE " + table + " DROP CONSTRAINT IF EXISTS " + fkName);
+                    }
+                }
+            }
         }
     }
 

@@ -13,10 +13,6 @@ public interface BorrowerCredentialsRepository extends JpaRepository<BorrowerCre
 
     boolean existsByUsername(String username);
 
-    Optional<BorrowerCredentials> findByUsername(String username);
-
     @Query("SELECT c FROM BorrowerCredentials c JOIN FETCH c.borrower WHERE c.username = :username")
     Optional<BorrowerCredentials> findByUsernameWithBorrower(@Param("username") String username);
-
-    Optional<BorrowerCredentials> findByBorrowerLibraryId(String libraryId);
 }

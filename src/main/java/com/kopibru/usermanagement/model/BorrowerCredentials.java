@@ -12,6 +12,10 @@ import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
+/**
+ * Login credentials for a {@link Borrower}.
+ * Linked by {@code borrower_id} (PK of {@code borrowers}), not by duplicating {@code library_id}.
+ */
 @Entity
 @Table(name = "borrower_credentials")
 public class BorrowerCredentials {
@@ -23,7 +27,7 @@ public class BorrowerCredentials {
 
     @NotNull(message = "borrower is required")
     @OneToOne(optional = false, fetch = FetchType.LAZY)
-    @JoinColumn(name = "library_id", referencedColumnName = "library_id", nullable = false, unique = true)
+    @JoinColumn(name = "borrower_id", referencedColumnName = "id", nullable = false, unique = true)
     private Borrower borrower;
 
     @NotBlank(message = "username is required")
