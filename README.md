@@ -57,11 +57,29 @@ On GCP (Cloud Run), configure env vars such as:
 - `DB_NAME=book_catalogue` (optional; default)
 - `DB_USERNAME` / `DB_PASSWORD`
 - `JWT_SECRET` — same value as IndexShelf
+- Optional SUPER_ADMIN bootstrap secrets (see below)
 - Attach the same Cloud SQL instance under Cloud Run **Cloud SQL connections**
 - Grant the Cloud Run service account `roles/cloudsql.client`
 
 Do **not** set `DB_URL` to `jdbc:postgresql://localhost:5432/...` on Cloud Run.
 Do **not** bake `prod` into the JAR; override with env vars at deploy time.
+
+### One-time SUPER_ADMIN bootstrap
+
+On first startup (dev or prod), if no `SUPER_ADMIN` borrower exists, UserManagement creates one.
+Later starts skip creation — changing secrets afterward does **not** update the existing account.
+
+| Setting | Env / Secret Manager | Default |
+|---------|----------------------|---------|
+| Enabled | `SUPER_ADMIN_BOOTSTRAP_ENABLED` | `true` |
+| libraryId | `SUPER_ADMIN_LIBRARY_ID` | `MASTER_ADMIN` |
+| name | `SUPER_ADMIN_NAME` | `MASTER_ADMIN` |
+| username | `SUPER_ADMIN_USERNAME` | `MASTER_ADMIN` |
+| password | `SUPER_ADMIN_PASSWORD` | `superadmin` |
+| email | `SUPER_ADMIN_EMAIL` | `superadmin@example.com` |
+
+On Cloud Run, map these from Secret Manager as env vars (or volume mounts that export the same names).
+`SUPER_ADMIN` cannot be assigned via `POST /api/borrowers` — registration only allows `ADMIN`, `LIBRARIAN`, or `BORROWER`.
 
 ### Cloud Run → Cloud SQL (recommended)
 
@@ -101,6 +119,9 @@ docker pull ghcr.io/<your-github-username>/usermanagement:latest
 
 ### Register borrower
 
+`role` is optional. Allowed via registration: `ADMIN`, `LIBRARIAN`, `BORROWER` (default `BORROWER`).
+`SUPER_ADMIN` is created only by one-time bootstrap (not this API).
+
 ```bash
 curl -X POST http://localhost:8082/api/borrowers \
   -H "Content-Type: application/json" \
@@ -109,7 +130,8 @@ curl -X POST http://localhost:8082/api/borrowers \
     "name": "Alice Tan",
     "email": "alice@example.com",
     "username": "alice",
-    "password": "password123"
+    "password": "password123",
+    "role": "BORROWER"
   }'
 ```
 

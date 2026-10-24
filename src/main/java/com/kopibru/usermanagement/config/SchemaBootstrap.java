@@ -130,7 +130,41 @@ public class SchemaBootstrap implements ApplicationListener<ApplicationEnvironme
                 stmt.execute(sql);
             }
             migrateCredentialsFkToBorrowerId(conn, stmt);
+            migrateEnsureBorrowerRole(conn, stmt);
         }
+    }
+
+    /**
+     * Existing borrowers tables created before role was added need the column.
+     * {@code CREATE TABLE IF NOT EXISTS} does not alter existing tables.
+     */
+    private void migrateEnsureBorrowerRole(Connection conn, Statement stmt) throws Exception {
+        if (!tableExists(conn, "borrowers")) {
+            return;
+        }
+        if (!columnExists(conn, "borrowers", "role")) {
+            stmt.execute("""
+                    ALTER TABLE borrowers
+                    ADD COLUMN role VARCHAR(50) NOT NULL DEFAULT 'BORROWER'
+                    """);
+        } else {
+            stmt.execute("""
+                    UPDATE borrowers
+                    SET role = 'BORROWER'
+                    WHERE role IS NULL OR TRIM(role) = ''
+                    """);
+            stmt.execute("ALTER TABLE borrowers ALTER COLUMN role SET DEFAULT 'BORROWER'");
+            stmt.execute("ALTER TABLE borrowers ALTER COLUMN role SET NOT NULL");
+        }
+        stmt.execute("""
+                ALTER TABLE borrowers
+                DROP CONSTRAINT IF EXISTS borrowers_role_check
+                """);
+        stmt.execute("""
+                ALTER TABLE borrowers
+                ADD CONSTRAINT borrowers_role_check
+                CHECK (role IN ('SUPER_ADMIN', 'ADMIN', 'LIBRARIAN', 'BORROWER'))
+                """);
     }
 
     /**

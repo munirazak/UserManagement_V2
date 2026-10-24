@@ -2,9 +2,11 @@ package com.kopibru.usermanagement.service;
 
 import com.kopibru.usermanagement.dto.BorrowerRegistrationRequest;
 import com.kopibru.usermanagement.exception.DuplicateBorrowerException;
+import com.kopibru.usermanagement.exception.ForbiddenRoleException;
 import com.kopibru.usermanagement.exception.ResourceNotFoundException;
 import com.kopibru.usermanagement.model.Borrower;
 import com.kopibru.usermanagement.model.BorrowerCredentials;
+import com.kopibru.usermanagement.model.BorrowerRole;
 import com.kopibru.usermanagement.repository.BorrowerCredentialsRepository;
 import com.kopibru.usermanagement.repository.BorrowerRepository;
 import org.junit.jupiter.api.Test;
@@ -57,7 +59,10 @@ class BorrowerServiceTest {
         Borrower result = borrowerService.register(request);
 
         assertThat(result.getLibraryId()).isEqualTo("LIB-001");
-        verify(borrowerRepository).save(any(Borrower.class));
+
+        ArgumentCaptor<Borrower> borrowerCaptor = ArgumentCaptor.forClass(Borrower.class);
+        verify(borrowerRepository).save(borrowerCaptor.capture());
+        assertThat(borrowerCaptor.getValue().getRole()).isEqualTo(BorrowerRole.BORROWER);
 
         ArgumentCaptor<BorrowerCredentials> credentialsCaptor =
                 ArgumentCaptor.forClass(BorrowerCredentials.class);
@@ -67,6 +72,41 @@ class BorrowerServiceTest {
         assertThat(credentials.getPassword()).isEqualTo("hashed-password");
         assertThat(credentials.getBorrower()).isEqualTo(savedBorrower);
         verify(passwordEncoder).encode("password123");
+    }
+
+    @Test
+    void register_usesExplicitRoleWhenProvided() {
+        BorrowerRegistrationRequest request = new BorrowerRegistrationRequest(
+                "LIB-002", "Bob", "bob@example.com", "bob", "password123", BorrowerRole.LIBRARIAN);
+        Borrower savedBorrower = new Borrower("LIB-002", "Bob", "bob@example.com", BorrowerRole.LIBRARIAN);
+        savedBorrower.setId(2L);
+
+        when(borrowerRepository.existsByLibraryId("LIB-002")).thenReturn(false);
+        when(borrowerCredentialsRepository.existsByUsername("bob")).thenReturn(false);
+        when(borrowerRepository.save(any(Borrower.class))).thenReturn(savedBorrower);
+        when(passwordEncoder.encode("password123")).thenReturn("hashed-password");
+        when(borrowerCredentialsRepository.save(any(BorrowerCredentials.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        Borrower result = borrowerService.register(request);
+
+        ArgumentCaptor<Borrower> borrowerCaptor = ArgumentCaptor.forClass(Borrower.class);
+        verify(borrowerRepository).save(borrowerCaptor.capture());
+        assertThat(borrowerCaptor.getValue().getRole()).isEqualTo(BorrowerRole.LIBRARIAN);
+        assertThat(result.getRole()).isEqualTo(BorrowerRole.LIBRARIAN);
+    }
+
+    @Test
+    void register_rejectsSuperAdminRole() {
+        BorrowerRegistrationRequest request = new BorrowerRegistrationRequest(
+                "LIB-SA", "Admin", "admin@example.com", "admin", "password123", BorrowerRole.SUPER_ADMIN);
+        when(borrowerRepository.existsByLibraryId("LIB-SA")).thenReturn(false);
+        when(borrowerCredentialsRepository.existsByUsername("admin")).thenReturn(false);
+
+        assertThatThrownBy(() -> borrowerService.register(request))
+                .isInstanceOf(ForbiddenRoleException.class)
+                .hasMessageContaining("one-time bootstrap");
+        verify(borrowerRepository, never()).save(any());
     }
 
     @Test
