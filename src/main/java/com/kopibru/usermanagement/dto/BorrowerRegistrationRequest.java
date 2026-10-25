@@ -1,5 +1,6 @@
 package com.kopibru.usermanagement.dto;
 
+import com.kopibru.usermanagement.model.BorrowerRole;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -24,16 +25,29 @@ public class BorrowerRegistrationRequest {
     @Size(min = 8, max = 100, message = "password must be between 8 and 100 characters")
     private String password;
 
+    /**
+     * Optional. When omitted or null, defaults to {@link BorrowerRole#BORROWER}.
+     * Allowed via registration: ADMIN, LIBRARIAN, BORROWER.
+     * {@link BorrowerRole#SUPER_ADMIN} is rejected — created only by one-time bootstrap.
+     */
+    private BorrowerRole role;
+
     public BorrowerRegistrationRequest() {
     }
 
     public BorrowerRegistrationRequest(String libraryId, String name, String email,
                                        String username, String password) {
+        this(libraryId, name, email, username, password, null);
+    }
+
+    public BorrowerRegistrationRequest(String libraryId, String name, String email,
+                                       String username, String password, BorrowerRole role) {
         this.libraryId = libraryId;
         this.name = name;
         this.email = email;
         this.username = username;
         this.password = password;
+        this.role = role;
     }
 
     public String getLibraryId() {
@@ -74,5 +88,13 @@ public class BorrowerRegistrationRequest {
 
     public void setPassword(String password) {
         this.password = password;
+    }
+
+    public BorrowerRole getRole() {
+        return role;
+    }
+
+    public void setRole(BorrowerRole role) {
+        this.role = role;
     }
 }

@@ -2,9 +2,11 @@ package com.kopibru.usermanagement.controller;
 
 import com.kopibru.usermanagement.dto.BorrowerRegistrationRequest;
 import com.kopibru.usermanagement.exception.DuplicateBorrowerException;
+import com.kopibru.usermanagement.exception.ForbiddenRoleException;
 import com.kopibru.usermanagement.exception.GlobalExceptionHandler;
 import com.kopibru.usermanagement.exception.ResourceNotFoundException;
 import com.kopibru.usermanagement.model.Borrower;
+import com.kopibru.usermanagement.model.BorrowerRole;
 import com.kopibru.usermanagement.security.JwtService;
 import com.kopibru.usermanagement.service.BorrowerService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -56,7 +58,51 @@ class BorrowerControllerTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.libraryId").value("LIB-001"))
-                .andExpect(jsonPath("$.id").value(1));
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.role").value("BORROWER"));
+    }
+
+    @Test
+    void registerBorrower_acceptsExplicitRole() throws Exception {
+        BorrowerRegistrationRequest request = new BorrowerRegistrationRequest(
+                "LIB-002", "Bob", "bob@example.com", "bob", "password123", BorrowerRole.ADMIN);
+        Borrower borrower = new Borrower("LIB-002", "Bob", "bob@example.com", BorrowerRole.ADMIN);
+        borrower.setId(2L);
+        when(borrowerService.register(any(BorrowerRegistrationRequest.class))).thenReturn(borrower);
+
+        mockMvc.perform(post("/api/borrowers")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.role").value("ADMIN"));
+    }
+
+    @Test
+    void registerBorrower_returnsBadRequestWhenRoleInvalid() throws Exception {
+        String body = """
+                {"libraryId":"LIB-003","name":"Carol","email":"carol@example.com",
+                 "username":"carol","password":"password123","role":"ADMI"}
+                """;
+
+        mockMvc.perform(post("/api/borrowers")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void registerBorrower_returnsBadRequestWhenSuperAdminRequested() throws Exception {
+        BorrowerRegistrationRequest request = new BorrowerRegistrationRequest(
+                "LIB-SA", "Admin", "admin@example.com", "admin", "password123", BorrowerRole.SUPER_ADMIN);
+        when(borrowerService.register(any(BorrowerRegistrationRequest.class)))
+                .thenThrow(new ForbiddenRoleException(
+                        "SUPER_ADMIN can only be created by one-time bootstrap, not via registration"));
+
+        mockMvc.perform(post("/api/borrowers")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("one-time bootstrap")));
     }
 
     @Test

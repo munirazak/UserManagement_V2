@@ -2,9 +2,11 @@ package com.kopibru.usermanagement.service;
 
 import com.kopibru.usermanagement.dto.BorrowerRegistrationRequest;
 import com.kopibru.usermanagement.exception.DuplicateBorrowerException;
+import com.kopibru.usermanagement.exception.ForbiddenRoleException;
 import com.kopibru.usermanagement.exception.ResourceNotFoundException;
 import com.kopibru.usermanagement.model.Borrower;
 import com.kopibru.usermanagement.model.BorrowerCredentials;
+import com.kopibru.usermanagement.model.BorrowerRole;
 import com.kopibru.usermanagement.repository.BorrowerCredentialsRepository;
 import com.kopibru.usermanagement.repository.BorrowerRepository;
 import org.slf4j.Logger;
@@ -44,7 +46,14 @@ public class BorrowerService {
                     "Username '" + request.getUsername() + "' is already taken");
         }
 
-        Borrower borrower = new Borrower(request.getLibraryId(), request.getName(), request.getEmail());
+        BorrowerRole role = request.getRole() != null ? request.getRole() : BorrowerRole.BORROWER;
+        if (role == BorrowerRole.SUPER_ADMIN) {
+            throw new ForbiddenRoleException(
+                    "SUPER_ADMIN can only be created by one-time bootstrap, not via registration");
+        }
+
+        Borrower borrower = new Borrower(
+                request.getLibraryId(), request.getName(), request.getEmail(), role);
         Borrower savedBorrower = borrowerRepository.save(borrower);
 
         String hashedPassword = passwordEncoder.encode(request.getPassword());
