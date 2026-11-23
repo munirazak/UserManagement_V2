@@ -21,27 +21,41 @@ mvn spring-boot:run
 mvn spring-boot:run -Dspring-boot.run.profiles=prod
 ```
 
-### Option B — Docker Compose (app + Postgres)
+### Option B — Docker Compose (app → Neon)
 
 ```bash
 docker compose up --build
 ```
 
-This starts:
+This starts UserManagement on port `8082` against Neon PostgreSQL.
+Default profile is **`dev`**. Neon host/password are **not** in properties files — set them via `.env` or Secret Manager.
 
-- PostgreSQL on host port `5434` (container still uses `5432`)
-- UserManagement API on port `8082` (`prod` profile)
+```bash
+cp .env.example .env   # then edit NEON_HOST / DB_PASSWORD
+docker compose up --build
 
-Stop with `docker compose down` (add `-v` to also remove the DB volume).
+# Production Neon branch
+SPRING_PROFILES_ACTIVE=prod docker compose up --build
+```
+
+On Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+$env:SPRING_PROFILES_ACTIVE="prod"; docker compose up --build
+```
+
+Stop with `docker compose down`.
 
 Base URL: `http://localhost:8082`
 
-### Port and profile (local vs GCP)
+### Port and profile (local vs prod)
 
-| Setting | Local default | Production / GCP |
-|---------|---------------|------------------|
+| Setting | Local default | Production |
+|---------|---------------|------------|
 | Port | `8082` (`PORT` unset) | Set env `PORT` (Cloud Run sets this, often `8080`) |
 | Profile | `dev` | Set env `SPRING_PROFILES_ACTIVE=prod` |
+| Database | Neon (via `NEON_HOST`) | Neon (via `NEON_HOST`) |
 
 `application.properties` uses:
 
@@ -50,19 +64,24 @@ server.port=${PORT:8082}
 spring.profiles.active=${SPRING_PROFILES_ACTIVE:dev}
 ```
 
-On GCP (Cloud Run), configure env vars such as:
+Datasource env vars (dev + prod) — never commit real values:
+
+| Env | Purpose | Example |
+|-----|---------|---------|
+| `NEON_HOST` | Neon pooler hostname only | `ep-....neon.tech` |
+| `DB_NAME` | Database name | `book_catalogue` (default) |
+| `DB_USERNAME` | DB user | `neondb_owner` (default) |
+| `DB_PASSWORD` | DB password | from Secret Manager / `.env` |
+| `DB_URL` | Optional full JDBC URL override | if set, replaces the URL built from `NEON_HOST` |
+
+On Cloud Run, configure:
 
 - `SPRING_PROFILES_ACTIVE=prod`
-- `CLOUD_SQL_INSTANCE=project:region:instance` (**required** — from Cloud SQL instance overview)
-- `DB_NAME=book_catalogue` (optional; default)
-- `DB_USERNAME` / `DB_PASSWORD`
+- `NEON_HOST` / `DB_USERNAME` / `DB_PASSWORD` (from Secret Manager)
 - `JWT_SECRET` — same value as IndexShelf
 - Optional SUPER_ADMIN bootstrap secrets (see below)
-- Attach the same Cloud SQL instance under Cloud Run **Cloud SQL connections**
-- Grant the Cloud Run service account `roles/cloudsql.client`
 
-Do **not** set `DB_URL` to `jdbc:postgresql://localhost:5432/...` on Cloud Run.
-Do **not** bake `prod` into the JAR; override with env vars at deploy time.
+Do **not** put Neon host or password in committed properties files.
 
 ### One-time SUPER_ADMIN bootstrap
 
@@ -81,19 +100,18 @@ Later starts skip creation — changing secrets afterward does **not** update th
 On Cloud Run, map these from Secret Manager as env vars (or volume mounts that export the same names).
 `SUPER_ADMIN` cannot be assigned via `POST /api/borrowers` — registration only allows `ADMIN`, `LIBRARIAN`, or `BORROWER`.
 
-### Cloud Run → Cloud SQL (recommended)
+### Neon PostgreSQL
 
-UserManagement uses the **Cloud SQL Java Connector** (`postgres-socket-factory`), not a public internet Postgres host.
-
-Prod JDBC default (when `DB_URL` is unset):
+JDBC URL is built from env (when `DB_URL` is unset):
 
 ```text
-jdbc:postgresql:///<DB_NAME>?cloudSqlInstance=<CLOUD_SQL_INSTANCE>
-  &socketFactory=com.google.cloud.sql.postgres.SocketFactory
-  &cloudSqlRefreshStrategy=lazy
+jdbc:postgresql://${NEON_HOST}/${DB_NAME}?sslmode=require&channelBinding=require
 ```
 
-Create the database in Cloud SQL Console before the first deploy. Local Docker Compose still sets `DB_URL=jdbc:postgresql://postgres:5432/book_catalogue`.
+Create the `book_catalogue` database in the Neon console before the first deploy.
+`SchemaBootstrap` skips `CREATE DATABASE` for Neon hosts and only applies `schema.sql` + migrations.
+
+Docker Compose runs the app only (no local Postgres container). Copy `.env.example` → `.env` and set `NEON_HOST` / `DB_PASSWORD`.
 
 ### CI/CD (GitHub Actions)
 

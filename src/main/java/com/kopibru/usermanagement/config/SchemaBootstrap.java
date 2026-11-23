@@ -17,11 +17,11 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * Ensures the database from {@code spring.datasource.url} exists (local/Docker TCP only),
+ * Ensures the database from {@code spring.datasource.url} exists (local TCP only),
  * then runs table DDL from {@code schema.sql}.
  * <p>
- * Cloud Run → Cloud SQL uses the Java Connector ({@code cloudSqlInstance}). In that case
- * {@code CREATE DATABASE} is skipped — create the database in Cloud SQL Console first.
+ * Managed hosts (Neon, Cloud SQL Java Connector) skip {@code CREATE DATABASE} —
+ * create the database in the provider console first.
  */
 public class SchemaBootstrap implements ApplicationListener<ApplicationEnvironmentPreparedEvent> {
 
@@ -38,17 +38,17 @@ public class SchemaBootstrap implements ApplicationListener<ApplicationEnvironme
         String username = env.getRequiredProperty("spring.datasource.username");
         String password = env.getProperty("spring.datasource.password", "");
 
-        validateCloudRunDatasource(env, jdbcUrl);
+        validateProdDatasource(env, jdbcUrl);
 
         String databaseName = extractDatabaseName(jdbcUrl);
         if (!SAFE_DB_NAME.matcher(databaseName).matches()) {
             throw new IllegalStateException("Unsafe database name in datasource URL: " + databaseName);
         }
 
-        boolean cloudSql = isCloudSqlConnectorUrl(jdbcUrl);
+        boolean managedRemote = isManagedRemoteDatasource(jdbcUrl);
 
         try {
-            if (!cloudSql) {
+            if (!managedRemote) {
                 String adminUrl = buildAdminUrl(jdbcUrl);
                 ensureDatabaseExists(adminUrl, username, password, databaseName);
             }
@@ -59,9 +59,9 @@ public class SchemaBootstrap implements ApplicationListener<ApplicationEnvironme
     }
 
     /**
-     * Fail fast on Cloud Run when prod still points at localhost (missing CLOUD_SQL_INSTANCE).
+     * Fail fast in prod when the datasource still points at localhost.
      */
-    private void validateCloudRunDatasource(Environment env, String jdbcUrl) {
+    private void validateProdDatasource(Environment env, String jdbcUrl) {
         boolean prod = false;
         for (String profile : env.getActiveProfiles()) {
             if ("prod".equalsIgnoreCase(profile)) {
@@ -76,11 +76,9 @@ public class SchemaBootstrap implements ApplicationListener<ApplicationEnvironme
         String lower = jdbcUrl.toLowerCase();
         if (lower.contains("localhost") || lower.contains("127.0.0.1")) {
             throw new IllegalStateException(
-                    "Prod datasource points at localhost. On Cloud Run set CLOUD_SQL_INSTANCE="
-                            + "project:region:instance (and do not set DB_URL to localhost). "
-                            + "Example JDBC default: jdbc:postgresql:///book_catalogue"
-                            + "?cloudSqlInstance=PROJECT:REGION:INSTANCE"
-                            + "&socketFactory=com.google.cloud.sql.postgres.SocketFactory");
+                    "Prod datasource points at localhost. Set DB_URL to your Neon JDBC URL "
+                            + "(e.g. jdbc:postgresql://....neon.tech/book_catalogue"
+                            + "?sslmode=require&channelBinding=require).");
         }
 
         if (isCloudSqlConnectorUrl(jdbcUrl)) {
@@ -88,14 +86,25 @@ public class SchemaBootstrap implements ApplicationListener<ApplicationEnvironme
             if (!StringUtils.hasText(instance) && !jdbcUrl.matches("(?i).*cloudSqlInstance=[^&]+.*")) {
                 throw new IllegalStateException(
                         "CLOUD_SQL_INSTANCE is required for Cloud SQL Java Connector "
-                                + "(format: project:region:instance).");
+                                + "(format: project:region:instance), or switch DB_URL to Neon.");
             }
             if (lower.contains("cloudsqlinstance=&") || lower.endsWith("cloudsqlinstance=")) {
                 throw new IllegalStateException(
                         "CLOUD_SQL_INSTANCE is empty. Set it to your Cloud SQL instance "
-                                + "connection name (project:region:instance).");
+                                + "connection name, or use a Neon DB_URL instead.");
             }
         }
+    }
+
+    /**
+     * Managed / remote providers where CREATE DATABASE via an admin URL is not appropriate.
+     */
+    private boolean isManagedRemoteDatasource(String jdbcUrl) {
+        return isCloudSqlConnectorUrl(jdbcUrl) || isNeonUrl(jdbcUrl);
+    }
+
+    private boolean isNeonUrl(String jdbcUrl) {
+        return jdbcUrl.toLowerCase().contains("neon.tech");
     }
 
     private boolean isCloudSqlConnectorUrl(String jdbcUrl) {
