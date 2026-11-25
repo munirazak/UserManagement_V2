@@ -155,11 +155,15 @@ curl -X POST http://localhost:8082/api/borrowers \
 
 ### Login
 
+JWT includes claim `role` (from `borrowers.role`) so IndexShelf can authorize SUPER_ADMIN catalog ops.
+
 ```bash
 curl -X POST http://localhost:8082/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"alice","password":"password123"}'
 ```
+
+Response includes `token`, `libraryId`, `username`, and `role`.
 
 ### List borrowers (JWT required)
 

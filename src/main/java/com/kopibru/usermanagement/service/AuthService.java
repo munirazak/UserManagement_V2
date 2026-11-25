@@ -43,8 +43,12 @@ public class AuthService {
         }
 
         String libraryId = credentials.getBorrower().getLibraryId();
-        String token = jwtService.generateToken(libraryId, credentials.getUsername());
-        log.info("Authentication succeeded username={} libraryId={}", credentials.getUsername(), libraryId);
-        return new LoginResponse(token, libraryId, credentials.getUsername());
+        String role = credentials.getBorrower().getRole() != null
+                ? credentials.getBorrower().getRole().name()
+                : "BORROWER";
+        String token = jwtService.generateToken(libraryId, credentials.getUsername(), role);
+        log.info("Authentication succeeded username={} libraryId={} role={}",
+                credentials.getUsername(), libraryId, role);
+        return new LoginResponse(token, libraryId, credentials.getUsername(), role);
     }
 }
