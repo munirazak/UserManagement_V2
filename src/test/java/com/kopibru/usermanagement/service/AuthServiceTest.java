@@ -5,6 +5,7 @@ import com.kopibru.usermanagement.dto.LoginResponse;
 import com.kopibru.usermanagement.exception.UnauthorizedException;
 import com.kopibru.usermanagement.model.Borrower;
 import com.kopibru.usermanagement.model.BorrowerCredentials;
+import com.kopibru.usermanagement.model.BorrowerRole;
 import com.kopibru.usermanagement.repository.BorrowerCredentialsRepository;
 import com.kopibru.usermanagement.security.JwtService;
 import org.junit.jupiter.api.Test;
@@ -36,21 +37,22 @@ class AuthServiceTest {
 
     @Test
     void login_returnsTokenWhenCredentialsValid() {
-        Borrower borrower = new Borrower("LIB-001", "Alice", "alice@example.com");
+        Borrower borrower = new Borrower("LIB-001", "Alice", "alice@example.com", BorrowerRole.SUPER_ADMIN);
         BorrowerCredentials credentials = new BorrowerCredentials(borrower, "alice", "hashed");
         LoginRequest request = new LoginRequest("alice", "password123");
 
         when(borrowerCredentialsRepository.findByUsernameWithBorrower("alice"))
                 .thenReturn(Optional.of(credentials));
         when(passwordEncoder.matches("password123", "hashed")).thenReturn(true);
-        when(jwtService.generateToken("LIB-001", "alice")).thenReturn("jwt-token");
+        when(jwtService.generateToken("LIB-001", "alice", "SUPER_ADMIN")).thenReturn("jwt-token");
 
         LoginResponse response = authService.login(request);
 
         assertThat(response.getToken()).isEqualTo("jwt-token");
         assertThat(response.getLibraryId()).isEqualTo("LIB-001");
         assertThat(response.getUsername()).isEqualTo("alice");
-        verify(jwtService).generateToken("LIB-001", "alice");
+        assertThat(response.getRole()).isEqualTo("SUPER_ADMIN");
+        verify(jwtService).generateToken("LIB-001", "alice", "SUPER_ADMIN");
     }
 
     @Test
